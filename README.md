@@ -1,6 +1,6 @@
 # Lilygo_T5_Epaper_Netatmo_Weather
 
-Ce déport contient le code permettant d'afficher les informations de sa station météo Netatmo sur une board ESP32 [Lilygo DEPG0213BN](https://www.lilygo.cc/products/t5-v2-3-1) à encre électronique.
+Ce dépot contient le code permettant d'afficher les informations de sa station météo Netatmo sur une board ESP32 [Lilygo DEPG0213BN](https://www.lilygo.cc/products/t5-v2-3-1) à encre électronique.
 
 ![DEPG0213BN](./doc/DEPG0213BN_SMALL.jpg)
 
