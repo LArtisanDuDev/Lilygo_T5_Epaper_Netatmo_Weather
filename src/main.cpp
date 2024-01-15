@@ -12,7 +12,6 @@
 #include <WiFi.h>
 #include <ArduinoJson.h>
 #include <HTTPClient.h> 
-#include <Preferences.h>
 #include <TimeLib.h>
 #include <math.h>
 
@@ -23,8 +22,6 @@
 const int   PIN_BAT           = 35;      //adc for bat voltage
 const float VOLTAGE_100       = 4.2;     // Full battery curent li-ion
 const float VOLTAGE_0         = 3.5;     // Low battery curent li-ion
-
-Preferences preferences;
 
 GxIO_Class io(SPI, /*CS=5*/ SS, /*DC=*/17, /*RST=*/16);
 GxEPD_Class display(io, /*RST=*/16, /*BUSY=*/4);
@@ -52,51 +49,10 @@ void displayLine(String text);
 void displayInfo();
 bool getStationsData();
 void goToDeepSleepUntilNextWakeup();
-void managePreferences();
 bool getRefreshToken();
 void drawDebugGrid();
 
-void managePreferences()
-{
-    String strtmp = preferences.getString("client_secret", "null");
-    if (strtmp != "null") {
-      client_secret = strtmp; 
-    } else {
-      preferences.putString("client_secret",client_secret);
-    }
-
-    strtmp = preferences.getString("client_id", "null");
-    if (strtmp != "null") {
-      client_id = strtmp; 
-    } else {
-      preferences.putString("client_id",client_id);
-    }
-
-    strtmp = preferences.getString("access_token", "null");
-    if (strtmp != "null") {
-      access_token = strtmp; 
-    } else {
-      preferences.putString("access_token",access_token);
-    }
-
-    strtmp = preferences.getString("refresh_token", "null");
-    if (strtmp != "null") {
-      refresh_token = strtmp; 
-    } else {
-      preferences.putString("refresh_token",refresh_token);
-    }
-
-    strtmp = preferences.getString("device_id", "null");
-    if (strtmp != "null") {
-      device_id = strtmp; 
-    } else {
-      preferences.putString("device_id",device_id);
-    }
-}
-
 void setup() {
-    preferences.begin("credentialsNetatmo", false);
-    managePreferences();
 
     setlocale(LC_TIME, "fr_FR.UTF-8");
 
@@ -315,7 +271,11 @@ bool getStationsData() {
     Serial.println(netatmoGetStationsData);
           
     http.begin(netatmoGetStationsData);
-    http.addHeader("Authorization", "Bearer " + access_token); // Adding Bearer token as HTTP header
+
+    char bearer[66] = "Bearer ";
+    strcat(bearer,access_token);
+
+    http.addHeader("Authorization", bearer); // Adding Bearer token as HTTP header
     int httpCode = http.GET();
 
     if (httpCode > 0) {
@@ -363,12 +323,13 @@ bool getStationsData() {
             }
           }
         }
-        
+#ifdef DEBUG_NETATMO        
         dumpModule(NAMain);
         dumpModule(NAModule1);
         dumpModule(NAModule4[0]);
         dumpModule(NAModule4[1]);
         dumpModule(NAModule4[2]);
+#endif
         retour = true;
               
     } else {
@@ -406,10 +367,12 @@ bool getRefreshToken() {
         if (doc.containsKey("access_token")) {
           String str_access_token = doc["access_token"].as<String>();
 #ifdef DEBUG_NETATMO
-          Serial.println(str_access_token);
+          char buffer_token[77] = "Old access token :";
+          strcat(buffer_token,access_token);
+          Serial.println(buffer_token);
+          Serial.println("New access token :" + str_access_token);
 #endif
-          preferences.putString("access_token",str_access_token);
-          access_token = str_access_token; 
+          strcpy(access_token, str_access_token.c_str());
           retour = true;
         } else {
           Serial.println("No access_token");
@@ -418,21 +381,16 @@ bool getRefreshToken() {
         if (doc.containsKey("refresh_token")) {
           String str_refresh_token = doc["refresh_token"].as<String>();
 #ifdef DEBUG_NETATMO
-          Serial.println(str_refresh_token);
+          char buffer_token[79] = "Old refresh token : ";
+          strcat(buffer_token,refresh_token);
+          Serial.println(buffer_token);
+          Serial.println("New refresh token : " + str_refresh_token);
 #endif
-          preferences.putString("refresh_token",str_refresh_token);
-          refresh_token = str_refresh_token; 
+          strcpy(refresh_token, str_refresh_token.c_str()); 
         } else {
           Serial.println("No refresh_token");
           retour = false;
         } 
-
-#ifdef DEBUG_NETATMO
-        Serial.println("access_token :");
-        Serial.println(access_token);
-        Serial.println("refresh_token :");
-        Serial.println(refresh_token);
-#endif
     } else {
         Serial.println("refreshToken Error : " + http.errorToString(httpCode));
     }
