@@ -105,25 +105,34 @@ void setup() {
 
 bool connectToWiFi()
 {
-
+  WiFi.disconnect(true, true);
   // WiFi setup
   WiFi.mode(WIFI_STA);
 
-  // SSID & Password are in toCustomize.h
   WiFi.begin(wifi_ssid, wifi_key);
-
-  int max_try = 0;
-  while (WiFi.status() != WL_CONNECTED && max_try < 10) {
+  uint8_t wifiAttempts = 0;
+  while (WiFi.status() != WL_CONNECTED && wifiAttempts < 100)
+  {
     Serial.print(".");
-    delay(3000);
-    max_try++;
+    delay(1000);
+    if(wifiAttempts == 10)
+    {
+      WiFi.disconnect(true, true);//Switch off the wifi on making 10 attempts and start again.
+      WiFi.begin(wifi_ssid, wifi_key);
+    }
+    wifiAttempts++;
   }
-
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("WiFi Connected");
+  if (WiFi.status() == WL_CONNECTED)
+  {
+    //WiFi.setAutoReconnect(true);//Not necessary
+    //Serial.println();//Not necessary
+    Serial.print("Connected with IP: ");//Not necessary
+    Serial.println(WiFi.localIP());//Not necessary
     return true;
-  } else {
-    Serial.println("Error connecting WiFi.");
+  }
+  else
+  {
+    WiFi.disconnect(true, true);
     return false;
   }
 }
