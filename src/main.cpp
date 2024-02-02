@@ -1,6 +1,7 @@
 // Decomment to DEBUG
 //#define DEBUG_NETATMO
 //#define DEBUG_GRID
+//#define DEBUG_WIFI
 
 // Customize with your settings
 #include "TOCUSTOMIZE.h"
@@ -43,6 +44,7 @@ struct module_struct {
 } NAMain, NAModule1, NAModule4[3];
 
 // put function declarations here:
+int32_t getWiFiChannel(const char *ssid);
 bool connectToWiFi();
 void updateBatteryPercentage( int &percentage, float &voltage );
 void displayLine(String text);
@@ -103,13 +105,45 @@ void setup() {
     goToDeepSleepUntilNextWakeup();
 }
 
+// dans un réseau mesh, plusieurs bornes peuvent avoir le même SSID.
+// on va sélectionner celle que l'on reçoit le mieux.
+int32_t getWiFiChannel(const char *ssid) {
+  int32_t bestChannel = -1;
+  int32_t bestRSSI = -1000;
+  if (int32_t n = WiFi.scanNetworks()) {
+      for (uint8_t i=0; i<n; i++) {
+#ifdef DEBUG_WIFI
+          Serial.print("SSID :");
+          Serial.print(WiFi.SSID(i));
+          Serial.print(" Channel :");
+          Serial.print(WiFi.channel(i));
+          Serial.print(" RSSI :");
+          Serial.println(WiFi.RSSI(i));
+#endif      
+          if (!strcmp(ssid, WiFi.SSID(i).c_str())) {
+              if (WiFi.RSSI(i) > bestRSSI) {
+                bestRSSI = WiFi.RSSI(i);
+                bestChannel = WiFi.channel(i);
+              }
+          }
+      }
+  }
+  return bestChannel;
+}
+
 bool connectToWiFi()
 {
+
+  int32_t bestChannel = getWiFiChannel(wifi_ssid);
+
   WiFi.disconnect(true, true);
   // WiFi setup
   WiFi.mode(WIFI_STA);
-
-  WiFi.begin(wifi_ssid, wifi_key);
+  if (bestChannel != -1) {
+    WiFi.begin(wifi_ssid, wifi_key,bestChannel);
+  } else {
+    WiFi.begin(wifi_ssid, wifi_key);
+  }
   uint8_t wifiAttempts = 0;
   while (WiFi.status() != WL_CONNECTED && wifiAttempts < 100)
   {
@@ -118,16 +152,23 @@ bool connectToWiFi()
     if(wifiAttempts == 10)
     {
       WiFi.disconnect(true, true);//Switch off the wifi on making 10 attempts and start again.
-      WiFi.begin(wifi_ssid, wifi_key);
+      if (bestChannel != -1) {
+        WiFi.begin(wifi_ssid, wifi_key,bestChannel);
+      } else {
+        WiFi.begin(wifi_ssid, wifi_key);
+      }
     }
     wifiAttempts++;
   }
   if (WiFi.status() == WL_CONNECTED)
   {
-    //WiFi.setAutoReconnect(true);//Not necessary
-    //Serial.println();//Not necessary
-    Serial.print("Connected with IP: ");//Not necessary
-    Serial.println(WiFi.localIP());//Not necessary
+    Serial.print("Connected with IP: ");
+    Serial.println(WiFi.localIP());
+    Serial.println("Channel : ");
+    Serial.println(WiFi.channel());
+#ifdef DEBUG_WIFI
+  WiFi.printDiag(Serial);
+#endif
     return true;
   }
   else
@@ -136,6 +177,7 @@ bool connectToWiFi()
     return false;
   }
 }
+
 
 void updateBatteryPercentage( int &percentage, float &voltage ) {
   // Lire la tension de la batterie
