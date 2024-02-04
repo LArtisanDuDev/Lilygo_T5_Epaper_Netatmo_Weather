@@ -61,6 +61,8 @@ NAModule3;
 
 // put function declarations here:
 int32_t getWiFiChannel(const char *ssid);
+void drawLine(int x0, int y0, int y1, int y2);
+
 bool connectToWiFi();
 void updateBatteryPercentage( int &percentage, float &voltage );
 void displayLine(String text);
@@ -70,14 +72,19 @@ void goToDeepSleepUntilNextWakeup();
 bool getRefreshToken();
 void drawDebugGrid();
 
+void drawLine(int x0, int y0, int x1, int y1) {
+  display.drawLine(x0, y0, x1, y1, GxEPD_BLACK);
+}
 void setup() {
 
     setlocale(LC_TIME, "fr_FR.UTF-8");
 
     Serial.begin(115200);
     Serial.println("Starting...\n");
+    
 
-    // Gathering battery level
+
+	// Gathering battery level
     updateBatteryPercentage(batteryPercentage, batteryVoltage) ;
   
     // Initialize display
@@ -88,35 +95,32 @@ void setup() {
     Serial.println("MAC Adress:");
     Serial.println(WiFi.macAddress().c_str());
     Serial.println("Battery:");
+
+    
     char line[24];
     sprintf(line, "%5.3fv (%d%%)",batteryVoltage,batteryPercentage);
     Serial.println(line);
-    
     // Connecter au WiFi
     if (!connectToWiFi()) {
       displayLine("Error connecting wifi");  
-      display.update();
     } else {
     
       // Gathering Netatmo datas
       if (getRefreshToken()) {
         if(getStationsData()) {
           Serial.println("Start display");
-          display.fillScreen(GxEPD_WHITE);
 #ifdef DEBUG_GRID
           drawDebugGrid();
 #endif
           displayInfo();
-          display.update();
         } else {
           displayLine("GetStationsData Error");  
-          display.update();
         }
       } else {
         displayLine("Refresh token Error");  
-        display.update();
       }
     }
+	display.update();
     
     goToDeepSleepUntilNextWakeup();
 }
@@ -235,20 +239,20 @@ void drawBatteryLevel(int batteryTopLeftX, int batteryTopLeftY, int percentage)
   const int batteryHeight = barHeight + 4;
 
   // Horizontal
-  display.drawLine(batteryTopLeftX, batteryTopLeftY, batteryTopLeftX + batteryWidth, batteryTopLeftY, GxEPD_BLACK);
-  display.drawLine(batteryTopLeftX, batteryTopLeftY + batteryHeight, batteryTopLeftX + batteryWidth, batteryTopLeftY + batteryHeight, GxEPD_BLACK);
+  drawLine(batteryTopLeftX, batteryTopLeftY, batteryTopLeftX + batteryWidth, batteryTopLeftY);
+  drawLine(batteryTopLeftX, batteryTopLeftY + batteryHeight, batteryTopLeftX + batteryWidth, batteryTopLeftY + batteryHeight);
   // Vertical
-  display.drawLine(batteryTopLeftX, batteryTopLeftY, batteryTopLeftX, batteryTopLeftY + batteryHeight, GxEPD_BLACK);
-  display.drawLine(batteryTopLeftX + batteryWidth, batteryTopLeftY, batteryTopLeftX + batteryWidth, batteryTopLeftY + batteryHeight, GxEPD_BLACK);
+  drawLine(batteryTopLeftX, batteryTopLeftY, batteryTopLeftX, batteryTopLeftY + batteryHeight);
+  drawLine(batteryTopLeftX + batteryWidth, batteryTopLeftY, batteryTopLeftX + batteryWidth, batteryTopLeftY + batteryHeight);
   // + Pole
-  display.drawLine(batteryTopLeftX + batteryWidth + 1, batteryTopLeftY + 1, batteryTopLeftX + batteryWidth + 1, batteryTopLeftY + (batteryHeight - 1), GxEPD_BLACK);
-  display.drawLine(batteryTopLeftX + batteryWidth + 2, batteryTopLeftY + 1, batteryTopLeftX + batteryWidth + 2, batteryTopLeftY + (batteryHeight - 1), GxEPD_BLACK);
+  drawLine(batteryTopLeftX + batteryWidth + 1, batteryTopLeftY + 1, batteryTopLeftX + batteryWidth + 1, batteryTopLeftY + (batteryHeight - 1));
+  drawLine(batteryTopLeftX + batteryWidth + 2, batteryTopLeftY + 1, batteryTopLeftX + batteryWidth + 2, batteryTopLeftY + (batteryHeight - 1));
 
   int i, j;
   int nbBarsToDraw = round(percentage / 25.0);
   for (j = 0; j < nbBarsToDraw; j++) {
     for (i = 0; i < barWidth; i++) {
-      display.drawLine(batteryTopLeftX + 2 + (j * (barWidth + 1)) + i, batteryTopLeftY + 2, batteryTopLeftX + 2 + (j * (barWidth + 1)) + i, batteryTopLeftY + 2 + barHeight, GxEPD_BLACK);
+      drawLine(batteryTopLeftX + 2 + (j * (barWidth + 1)) + i, batteryTopLeftY + 2, batteryTopLeftX + 2 + (j * (barWidth + 1)) + i, batteryTopLeftY + 2 + barHeight);
     }
   }
 }
@@ -502,16 +506,22 @@ void drawDebugGrid()
     int screenWidth = 122;
     int screenHeight = 250;
 
+    Serial.print("Width : ");
+    Serial.print(screenWidth);
+    Serial.print(" Eight : ");
+    Serial.println(screenHeight);
+    
+
     // Dessiner des lignes verticales
     for (int x = 0; x <= screenWidth; x += gridSpacing)
     {
-        display.drawLine(x, 0, x, screenHeight, GxEPD_BLACK);
+        drawLine(x, 0, x, screenHeight);
     }
 
     // Dessiner des lignes horizontales
     for (int y = 0; y <= screenHeight; y += gridSpacing)
     {
-        display.drawLine(0, y, screenWidth, y, GxEPD_BLACK);
+        drawLine(0, y, screenWidth, y);
     }
 }
 
