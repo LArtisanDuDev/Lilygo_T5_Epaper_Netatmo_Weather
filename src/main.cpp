@@ -38,10 +38,26 @@ struct module_struct {
   String min = "";
   String max = "";
   String trend = "";
+  int battery_percent = 0;
+  String co2 = "";
+  String humidity = "";
+  String rain ="";
+  String sum_rain_1h = "";
+  String sum_rain_24h= "";
+  String reachable = "";
+
   unsigned long timemin = 0;
   unsigned long timemax = 0;
   unsigned long timeupdate = 0;
-} NAMain, NAModule1, NAModule4[3];
+} 
+// station
+NAMain, 
+// module extérieur
+NAModule1, 
+// modules intérieurs
+NAModule4[3],
+// pluviomètre
+NAModule3;
 
 // put function declarations here:
 int32_t getWiFiChannel(const char *ssid);
@@ -206,7 +222,7 @@ void displayLine(String text)
   currentLinePos += 10; 
 }
 
-void drawBatteryLevel(int batteryTopLeftX, int batteryTopLeftY)
+void drawBatteryLevel(int batteryTopLeftX, int batteryTopLeftY, int percentage)
 {
   const int leftMargin = 2;
 
@@ -229,7 +245,7 @@ void drawBatteryLevel(int batteryTopLeftX, int batteryTopLeftY)
   display.drawLine(batteryTopLeftX + batteryWidth + 2, batteryTopLeftY + 1, batteryTopLeftX + batteryWidth + 2, batteryTopLeftY + (batteryHeight - 1), GxEPD_BLACK);
 
   int i, j;
-  int nbBarsToDraw = round(batteryPercentage / 25.0);
+  int nbBarsToDraw = round(percentage / 25.0);
   for (j = 0; j < nbBarsToDraw; j++) {
     for (i = 0; i < barWidth; i++) {
       display.drawLine(batteryTopLeftX + 2 + (j * (barWidth + 1)) + i, batteryTopLeftY + 2, batteryTopLeftX + 2 + (j * (barWidth + 1)) + i, batteryTopLeftY + 2 + barHeight, GxEPD_BLACK);
@@ -289,11 +305,20 @@ void displayModule(module_struct module, int y)
 
 void displayInfo() {
     displayModule(NAMain,0);
+    // esp32 batterie level
+    drawBatteryLevel(90,5,batteryPercentage);
+
     displayModule(NAModule1,50);
+    drawBatteryLevel(90,55,NAModule1.battery_percent);
+
     displayModule(NAModule4[0],100);
+    drawBatteryLevel(90,105,NAModule4[0].battery_percent);
+    
     displayModule(NAModule4[1],150);
+    drawBatteryLevel(90,155,NAModule4[1].battery_percent);
+
     displayModule(NAModule4[2],200);
-    drawBatteryLevel(90,5);
+    drawBatteryLevel(90,205,NAModule4[2].battery_percent);
 }
 
 void dumpModule(module_struct module) {
@@ -302,12 +327,18 @@ void dumpModule(module_struct module) {
     Serial.println("Min :" + module.min);
     Serial.println("Max :" + module.max);
     Serial.println("Trend :" + module.trend);
-    Serial.println("Time Min :");
+    Serial.print("Battery :");
+    Serial.println(module.battery_percent);
+    Serial.println("CO2 :" + module.co2);
+    Serial.println("Humidity :" + module.humidity);
+    Serial.print("Time Min :");
     Serial.println(module.timemin);
-    Serial.println("Time Max :");
+    Serial.print("Time Max :");
     Serial.println(module.timemax);
-    Serial.println("Time Update :");
+    Serial.print("Time Update :");
     Serial.println(module.timeupdate);
+    Serial.println("Reachable :" + module.reachable);
+    
 }
 
 bool getStationsData() {
@@ -353,6 +384,7 @@ bool getStationsData() {
           for(JsonObject module : modules) {
             if(module["type"].as<String>() == "NAModule1") {
               NAModule1.name = module["module_name"].as<String>();
+              NAModule1.battery_percent = module["battery_percent"].as<int>();
               NAModule1.min = module["dashboard_data"]["min_temp"].as<String>();
               NAModule1.max = module["dashboard_data"]["max_temp"].as<String>();
               NAModule1.temperature = module["dashboard_data"]["Temperature"].as<String>();
@@ -360,9 +392,12 @@ bool getStationsData() {
               NAModule1.timemin = DELAYUTC_YOURTIMEZONE + module["dashboard_data"]["date_min_temp"].as<unsigned long>();
               NAModule1.timemax = DELAYUTC_YOURTIMEZONE + module["dashboard_data"]["date_max_temp"].as<unsigned long>();
               NAModule1.timeupdate = DELAYUTC_YOURTIMEZONE + station["dashboard_data"]["time_utc"].as<unsigned long>();
+              NAModule1.humidity = module["dashboard_data"]["Humidity"].as<String>();
+              NAModule1.reachable = module["reachable"].as<String>();
             }
             if(module["type"].as<String>() == "NAModule4") {
               NAModule4[module4counter].name = module["module_name"].as<String>();
+              NAModule4[module4counter].battery_percent = module["battery_percent"].as<int>();
               NAModule4[module4counter].min = module["dashboard_data"]["min_temp"].as<String>();
               NAModule4[module4counter].max = module["dashboard_data"]["max_temp"].as<String>();
               NAModule4[module4counter].temperature = module["dashboard_data"]["Temperature"].as<String>();
@@ -370,7 +405,18 @@ bool getStationsData() {
               NAModule4[module4counter].timemin = DELAYUTC_YOURTIMEZONE + module["dashboard_data"]["date_min_temp"].as<unsigned long>();
               NAModule4[module4counter].timemax = DELAYUTC_YOURTIMEZONE + module["dashboard_data"]["date_max_temp"].as<unsigned long>();
               NAModule4[module4counter].timeupdate = DELAYUTC_YOURTIMEZONE + station["dashboard_data"]["time_utc"].as<unsigned long>();
+              NAModule4[module4counter].humidity = module["dashboard_data"]["Humidity"].as<String>();
+              NAModule4[module4counter].co2 = module["dashboard_data"]["temp_trend"].as<String>();
+              NAModule4[module4counter].reachable = module["reachable"].as<String>();
               module4counter++;
+            }
+            if(module["type"].as<String>() == "NAModule3") {
+              NAModule3.name = module["module_name"].as<String>();
+              NAModule3.rain = module["dashboard_data"]["Rain"].as<String>();
+              NAModule3.sum_rain_1h = module["dashboard_data"]["sum_rain_1"].as<String>();
+              NAModule3.sum_rain_1h = module["dashboard_data"]["sum_rain_24"].as<String>();
+              NAModule3.battery_percent = module["battery_percent"].as<int>();
+              NAModule3.reachable = module["reachable"].as<String>();
             }
           }
         }
