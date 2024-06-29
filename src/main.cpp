@@ -1,7 +1,9 @@
 // Decomment to DEBUG
-// #define DEBUG_NETATMO
+#define DEBUG_NETATMO
 // #define DEBUG_GRID
-// #define DEBUG_WIFI
+//#define DEBUG_WIFI
+//#define DEBUG_SERIAL
+//#define FORCE_NVS
 
 // Customize with your settings
 #include "TOCUSTOMIZE.h"
@@ -12,10 +14,17 @@
 #include <GxIO/GxIO.h>
 #include <WiFi.h>
 #include <MyDumbWifi.h>
+#include <NetatmoWeatherAPI.h>
 #include <ArduinoJson.h>
 #include <HTTPClient.h>
 #include <TimeLib.h>
 #include <math.h>
+#include <Preferences.h>
+
+
+Preferences nvs;
+char previous_access_token[58];
+char previous_refresh_token[58];
 
 #include <Fonts/FreeSans9pt7b.h>
 #include <Fonts/FreeSansBold12pt7b.h>
@@ -33,43 +42,14 @@ int currentLinePos = 0;
 int batteryPercentage = 0;
 float batteryVoltage = 0.0;
 
-struct module_struct
-{
-  String name = "";
-  String temperature = "";
-  String min = "";
-  String max = "";
-  String trend = "";
-  int battery_percent = 0;
-  String co2 = "";
-  String humidity = "";
-  String rain = "";
-  String sum_rain_1h = "";
-  String sum_rain_24h = "";
-  String reachable = "";
-
-  unsigned long timemin = 0;
-  unsigned long timemax = 0;
-  unsigned long timeupdate = 0;
-}
-// station
-NAMain,
-    // module extérieur
-    NAModule1,
-    // modules intérieurs
-    NAModule4[3],
-    // pluviomètre
-    NAModule3;
-
 // put function declarations here:
 void drawLine(int x0, int y0, int y1, int y2);
 void updateBatteryPercentage(int &percentage, float &voltage);
 void displayLine(String text);
-void displayInfo();
-void dumpModule(module_struct module);
-bool getStationsData();
+void displayInfo(NetatmoWeatherAPI myAPI);
+int getDataFromAPI(NetatmoWeatherAPI *myAPI);
+
 void goToDeepSleepUntilNextWakeup();
-bool getRefreshToken();
 void drawDebugGrid();
 
 void drawLine(int x0, int y0, int x1, int y1)
@@ -82,6 +62,15 @@ void setup()
   setlocale(LC_TIME, "fr_FR.UTF-8");
 
   Serial.begin(115200);
+#ifdef DEBUG_SERIAL
+  // time to plug serial
+  for (int i = 0; i < 20; i++)
+  {
+    Serial.println(i);
+    delay(1000);
+  }
+#endif
+
   Serial.println("Starting...\n");
 
   // Gathering battery level
@@ -110,27 +99,46 @@ void setup()
   }
   else
   {
+    nvs.begin("netatmoCred", false);
+    NetatmoWeatherAPI myAPI;
+	
+#ifdef FORCE_NVS
+    nvs.putString("access_token", access_token);
+    nvs.putString("refresh_token", refresh_token);
+#endif
+    if(!nvs.isKey("access_token") || !nvs.isKey("refresh_token")) {
+      Serial.println("NVS : init namespace");
+      nvs.putString("access_token", access_token);
+      nvs.putString("refresh_token", refresh_token);
+    } else {
+      Serial.println("NVS : get value from namespace");
+      nvs.getString("access_token", access_token, 58);
+      nvs.getString("refresh_token", refresh_token, 58);     
+    }
+    Serial.print("access_token : ");
+    Serial.println(access_token);
+    Serial.print("refresh_token : ");
+    Serial.println(refresh_token); 
+    memcpy(previous_access_token, access_token, 58);
+    memcpy(previous_refresh_token, refresh_token, 58); 
 
-    // Gathering Netatmo datas
-    if (getRefreshToken())
+    
+    #ifdef DEBUG_NETATMO
+      myAPI.setDebug(true);
+    #endif
+
+    if (getDataFromAPI(&myAPI) == VALID_ACCESS_TOKEN)
     {
-      if (getStationsData())
-      {
         Serial.println("Start display");
 #ifdef DEBUG_GRID
         drawDebugGrid();
 #endif
-        displayInfo();
+        displayInfo(myAPI);
+      } else {
+        displayLine("Error connecting Netatmo API");
       }
-      else
-      {
-        displayLine("GetStationsData Error");
-      }
-    }
-    else
-    {
-      displayLine("Refresh token Error");
-    }
+      
+    
   }
   display.update();
 
@@ -156,6 +164,43 @@ void updateBatteryPercentage(int &percentage, float &voltage)
     }
   }
 }
+
+
+int getDataFromAPI(NetatmoWeatherAPI *myAPI) {
+  #ifdef DEBUG_NETATMO
+      myAPI->setDebug(true);
+    #endif
+
+    int result = myAPI->getStationsData(access_token, device_id, DELAYUTC_YOURTIMEZONE); 
+
+    if (result == EXPIRED_ACCESS_TOKEN || result == INVALID_ACCESS_TOKEN) {
+      if (myAPI->getRefreshToken(access_token, refresh_token, client_secret, client_id))
+      {
+        
+        // compare cred with previous
+        if(strncmp(previous_access_token, access_token, 58) != 0){
+          nvs.putString("access_token", access_token);
+          Serial.println("NVS : access_token updated");   
+        } else {
+          Serial.println("NVS : same access_token");
+          
+        }
+
+        if(strncmp(previous_refresh_token, refresh_token, 58) != 0){
+          nvs.putString("refresh_token", refresh_token);
+          Serial.println("NVS : refresh_token updated");
+            
+        } else {
+          Serial.println("NVS : same refresh_token");
+          
+        }
+        result = myAPI->getStationsData(access_token, device_id, DELAYUTC_YOURTIMEZONE);
+        
+      }
+    }
+    return result;
+}
+
 
 void displayLine(String text)
 {
@@ -252,224 +297,25 @@ void displayModule(module_struct module, int y)
   }
 }
 
-void displayInfo()
+void displayInfo(NetatmoWeatherAPI myAPI)
 {
-  displayModule(NAMain, 0);
+  myAPI.dumpModule(myAPI.NAMain);
+        
+  displayModule(myAPI.NAMain, 0);
   // esp32 batterie level
   drawBatteryLevel(90, 5, batteryPercentage);
 
-  displayModule(NAModule1, 50);
-  drawBatteryLevel(90, 55, NAModule1.battery_percent);
+  displayModule(myAPI.NAModule1, 50);
+  drawBatteryLevel(90, 55, myAPI.NAModule1.battery_percent);
 
-  displayModule(NAModule4[0], 100);
-  drawBatteryLevel(90, 105, NAModule4[0].battery_percent);
+  displayModule(myAPI.NAModule4[0], 100);
+  drawBatteryLevel(90, 105, myAPI.NAModule4[0].battery_percent);
 
-  displayModule(NAModule4[1], 150);
-  drawBatteryLevel(90, 155, NAModule4[1].battery_percent);
+  displayModule(myAPI.NAModule4[1], 150);
+  drawBatteryLevel(90, 155, myAPI.NAModule4[1].battery_percent);
 
-  displayModule(NAModule4[2], 200);
-  drawBatteryLevel(90, 205, NAModule4[2].battery_percent);
-}
-
-void dumpModule(module_struct module)
-{
-  Serial.println("Name :" + module.name);
-  Serial.println("Temperature :" + module.temperature);
-  Serial.println("Min :" + module.min);
-  Serial.println("Max :" + module.max);
-  Serial.println("Trend :" + module.trend);
-  Serial.print("Battery :");
-  Serial.println(module.battery_percent);
-  Serial.println("CO2 :" + module.co2);
-  Serial.println("Humidity :" + module.humidity);
-  Serial.print("Time Min :");
-  Serial.println(module.timemin);
-  Serial.print("Time Max :");
-  Serial.println(module.timemax);
-  Serial.print("Time Update :");
-  Serial.println(module.timeupdate);
-
-  Serial.print("Rain :" + module.rain);
-  Serial.print("Sum Rain 1h :" + module.sum_rain_1h);
-  Serial.print("Sum Rain 24h :" + module.sum_rain_24h);
-  Serial.println("Reachable :" + module.reachable);
-}
-
-bool getStationsData()
-{
-  String tmp_device_id = device_id;
-  tmp_device_id.replace(":", "%3A");
-
-  bool retour = false;
-  if (WiFi.status() == WL_CONNECTED)
-  {
-    HTTPClient http;
-
-    String netatmoGetStationsData = "https://api.netatmo.com/api/getstationsdata?device_id=" + tmp_device_id + "&get_favorites=false";
-    Serial.println(netatmoGetStationsData);
-
-    http.begin(netatmoGetStationsData);
-
-    char bearer[66] = "Bearer ";
-    strcat(bearer, access_token);
-
-    http.addHeader("Authorization", bearer); // Adding Bearer token as HTTP header
-    int httpCode = http.GET();
-
-    if (httpCode > 0)
-    {
-      DynamicJsonDocument doc(12288);
-      String payload = http.getString();
-#ifdef DEBUG_NETATMO
-      Serial.println("body :");
-      Serial.println(payload);
-#endif
-      deserializeJson(doc, payload);
-
-      JsonArray stations = doc["body"]["devices"].as<JsonArray>();
-      for (JsonObject station : stations)
-      {
-        NAMain.name = station["module_name"].as<String>();
-        NAMain.min = station["dashboard_data"]["min_temp"].as<String>();
-        NAMain.max = station["dashboard_data"]["max_temp"].as<String>();
-        NAMain.temperature = station["dashboard_data"]["Temperature"].as<String>();
-        NAMain.trend = station["dashboard_data"]["temp_trend"].as<String>();
-        NAMain.timemin = DELAYUTC_YOURTIMEZONE + station["dashboard_data"]["date_min_temp"].as<unsigned long>();
-        NAMain.timemax = DELAYUTC_YOURTIMEZONE + station["dashboard_data"]["date_max_temp"].as<unsigned long>();
-        NAMain.timeupdate = DELAYUTC_YOURTIMEZONE + station["dashboard_data"]["time_utc"].as<unsigned long>();
-        NAMain.humidity = station["dashboard_data"]["Humidity"].as<String>();
-        JsonArray modules = station["modules"].as<JsonArray>();
-        int module4counter = 0;
-        for (JsonObject module : modules)
-        {
-          if (module["type"].as<String>() == "NAModule1")
-          {
-            NAModule1.name = module["module_name"].as<String>();
-            NAModule1.battery_percent = module["battery_percent"].as<int>();
-            NAModule1.min = module["dashboard_data"]["min_temp"].as<String>();
-            NAModule1.max = module["dashboard_data"]["max_temp"].as<String>();
-            NAModule1.temperature = module["dashboard_data"]["Temperature"].as<String>();
-            NAModule1.trend = module["dashboard_data"]["temp_trend"].as<String>();
-            NAModule1.timemin = DELAYUTC_YOURTIMEZONE + module["dashboard_data"]["date_min_temp"].as<unsigned long>();
-            NAModule1.timemax = DELAYUTC_YOURTIMEZONE + module["dashboard_data"]["date_max_temp"].as<unsigned long>();
-            NAModule1.timeupdate = DELAYUTC_YOURTIMEZONE + station["dashboard_data"]["time_utc"].as<unsigned long>();
-            NAModule1.humidity = module["dashboard_data"]["Humidity"].as<String>();
-            NAModule1.reachable = module["reachable"].as<String>();
-          }
-          if (module["type"].as<String>() == "NAModule4")
-          {
-            NAModule4[module4counter].name = module["module_name"].as<String>();
-            NAModule4[module4counter].battery_percent = module["battery_percent"].as<int>();
-            NAModule4[module4counter].min = module["dashboard_data"]["min_temp"].as<String>();
-            NAModule4[module4counter].max = module["dashboard_data"]["max_temp"].as<String>();
-            NAModule4[module4counter].temperature = module["dashboard_data"]["Temperature"].as<String>();
-            NAModule4[module4counter].trend = module["dashboard_data"]["temp_trend"].as<String>();
-            NAModule4[module4counter].timemin = DELAYUTC_YOURTIMEZONE + module["dashboard_data"]["date_min_temp"].as<unsigned long>();
-            NAModule4[module4counter].timemax = DELAYUTC_YOURTIMEZONE + module["dashboard_data"]["date_max_temp"].as<unsigned long>();
-            NAModule4[module4counter].timeupdate = DELAYUTC_YOURTIMEZONE + station["dashboard_data"]["time_utc"].as<unsigned long>();
-            NAModule4[module4counter].humidity = module["dashboard_data"]["Humidity"].as<String>();
-            NAModule4[module4counter].co2 = module["dashboard_data"]["temp_trend"].as<String>();
-            NAModule4[module4counter].reachable = module["reachable"].as<String>();
-            module4counter++;
-          }
-          if (module["type"].as<String>() == "NAModule3")
-          {
-            NAModule3.name = module["module_name"].as<String>();
-            NAModule3.rain = module["dashboard_data"]["Rain"].as<String>();
-            NAModule3.sum_rain_1h = module["dashboard_data"]["sum_rain_1"].as<String>();
-            NAModule3.sum_rain_24h = module["dashboard_data"]["sum_rain_24"].as<String>();
-            NAModule3.battery_percent = module["battery_percent"].as<int>();
-            NAModule3.reachable = module["reachable"].as<String>();
-          }
-        }
-      }
-#ifdef DEBUG_NETATMO
-      dumpModule(NAMain);
-      dumpModule(NAModule1);
-      dumpModule(NAModule4[0]);
-      dumpModule(NAModule4[1]);
-      dumpModule(NAModule4[2]);
-      dumpModule(NAModule3);
-#endif
-      retour = true;
-    }
-    else
-    {
-      Serial.println("getStationsData Error : " + http.errorToString(httpCode));
-    }
-    http.end();
-  }
-  return retour;
-}
-
-bool getRefreshToken()
-{
-  String tmp_refresh_token = refresh_token;
-  tmp_refresh_token.replace("|", "%7C");
-
-  bool retour = false;
-  if (WiFi.status() == WL_CONNECTED)
-  {
-    HTTPClient http;
-    String netatmoRefreshTokenPayload = "client_secret=" + client_secret + "&grant_type=refresh_token&client_id=" + client_id + "&refresh_token=" + tmp_refresh_token;
-
-#ifdef DEBUG_NETATMO
-    Serial.println(netatmoRefreshTokenPayload);
-#endif
-
-    http.begin("https://api.netatmo.com/oauth2/token");
-    http.addHeader("Content-Type", "application/x-www-form-urlencoded");
-    int httpCode = http.POST(netatmoRefreshTokenPayload);
-    if (httpCode > 0)
-    {
-      DynamicJsonDocument doc(1024);
-      String payload = http.getString();
-#ifdef DEBUG_NETATMO
-      Serial.println("body :");
-      Serial.println(payload);
-#endif
-      deserializeJson(doc, payload);
-      if (doc.containsKey("access_token"))
-      {
-        String str_access_token = doc["access_token"].as<String>();
-#ifdef DEBUG_NETATMO
-        char buffer_token[77] = "Old access token :";
-        strcat(buffer_token, access_token);
-        Serial.println(buffer_token);
-        Serial.println("New access token :" + str_access_token);
-#endif
-        strcpy(access_token, str_access_token.c_str());
-        retour = true;
-      }
-      else
-      {
-        Serial.println("No access_token");
-      }
-
-      if (doc.containsKey("refresh_token"))
-      {
-        String str_refresh_token = doc["refresh_token"].as<String>();
-#ifdef DEBUG_NETATMO
-        char buffer_token[79] = "Old refresh token : ";
-        strcat(buffer_token, refresh_token);
-        Serial.println(buffer_token);
-        Serial.println("New refresh token : " + str_refresh_token);
-#endif
-        strcpy(refresh_token, str_refresh_token.c_str());
-      }
-      else
-      {
-        Serial.println("No refresh_token");
-        retour = false;
-      }
-    }
-    else
-    {
-      Serial.println("refreshToken Error : " + http.errorToString(httpCode));
-    }
-    http.end();
-  }
-  return retour;
+  displayModule(myAPI.NAModule4[2], 200);
+  drawBatteryLevel(90, 205, myAPI.NAModule4[2].battery_percent);
 }
 
 void drawDebugGrid()
@@ -511,3 +357,4 @@ void loop()
 {
   // put your main code here, to run repeatedly:
 }
+
