@@ -151,9 +151,9 @@ void setup()
             displayLine("Ok ? WTF ?");
           break;
         }
-    }
-      
-    
+        displayLine("Msg " + myAPI.errorMessage);
+        displayLine("LastBody " + myAPI.lastBody);
+    }    
   }
   display.update();
 
