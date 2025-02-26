@@ -126,17 +126,32 @@ void setup()
     #ifdef DEBUG_NETATMO
       myAPI.setDebug(true);
     #endif
-
-    if (getDataFromAPI(&myAPI) == VALID_ACCESS_TOKEN)
+    int res = getDataFromAPI(&myAPI); 
+    if (res == VALID_ACCESS_TOKEN)
     {
-        Serial.println("Start display");
+      Serial.println("Start display");
 #ifdef DEBUG_GRID
-        drawDebugGrid();
+      drawDebugGrid();
 #endif
-        displayInfo(myAPI);
-      } else {
-        displayLine("Error connecting Netatmo API");
-      }
+      displayInfo(myAPI);
+    } else {
+      displayLine("API Error");
+      switch (res)
+        {
+          case 3:
+            displayLine("Expired Token");
+          break;
+          case 2:
+            displayLine("Invalid Token");
+          break;
+          case 1:
+            displayLine("Other");
+          break;
+          case 0:
+            displayLine("Ok ? WTF ?");
+          break;
+        }
+    }
       
     
   }
